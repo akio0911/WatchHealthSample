@@ -8,6 +8,7 @@
 
 import WatchKit
 import Foundation
+import HealthKit
 
 
 class InterfaceController: WKInterfaceController {
@@ -16,6 +17,46 @@ class InterfaceController: WKInterfaceController {
         super.awakeWithContext(context)
         
         // Configure interface objects here.
+        
+        let healthStore = HKHealthStore()
+        
+        // 体重情報の型を生成する
+        guard let btType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
+        {
+            print("Failed to create HKObjectType")
+            return
+        }
+        
+        switch healthStore.authorizationStatusForType(btType) {
+        case .NotDetermined, .SharingDenied:
+            // 体重型のデータをHealthStoreから取得するために、ユーザーへ許可を求めます。
+            // 許可されたデータのみ、アプリケーションからHealthStoreへ読み込みする権限が与えられます。
+            // ヘルスケアの[ソース]タブ画面がモーダルで表示されます。
+            // 第1引数に指定したNSSet!型のshareTypesの書き込み許可を求めます。
+            // 第2引数に指定したNSSet!型のreadTypesの読み込み許可を求めます。
+            
+            let types = Set([btType])
+            healthStore.requestAuthorizationToShareTypes(nil, readTypes: types){ success, error in
+                
+                switch (success, error) {
+                case (false, let err?):
+                    print(err.description)
+                case (true , _):
+                    print("取得可能")
+//                    self.executeStatisticsCollectionQuery()
+                    ()
+                default:
+                    fatalError("success and error are invalid.")
+                }
+            }
+        case .SharingAuthorized:
+//            executeStatisticsCollectionQuery()
+            ()
+        }
+        
+        
+        
+        print("Initialize success")
     }
 
     override func willActivate() {
