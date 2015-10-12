@@ -13,6 +13,8 @@ import HealthKit
 
 class InterfaceController: WKInterfaceController {
 
+    @IBOutlet var label: WKInterfaceLabel!
+    
     override func awakeWithContext(context: AnyObject?) {
         super.awakeWithContext(context)
         
@@ -43,18 +45,14 @@ class InterfaceController: WKInterfaceController {
                     print(err.description)
                 case (true , _):
                     print("取得可能")
-//                    self.executeStatisticsCollectionQuery()
-                    ()
+                    self.executeQuery()
                 default:
                     fatalError("success and error are invalid.")
                 }
             }
         case .SharingAuthorized:
-//            executeStatisticsCollectionQuery()
-            ()
+            self.executeQuery()
         }
-        
-        
         
         print("Initialize success")
     }
@@ -69,4 +67,79 @@ class InterfaceController: WKInterfaceController {
         super.didDeactivate()
     }
 
+}
+
+extension InterfaceController
+{
+    // 体重の単位を生成する。単位はkg
+    var btUnit: HKUnit {
+        return HKUnit.gramUnitWithMetricPrefix(HKMetricPrefix.Kilo)
+    }
+    
+    typealias FindHealthValueCompletion = (HKSampleQuery, [HKSample]?, NSError?) -> Void
+    
+    func makeSampleQuery(type type: HKQuantityType, completion: FindHealthValueCompletion) -> HKSampleQuery {
+        // 体重情報の型を生成する
+        guard let btType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
+        {
+            fatalError("btTypeが作成できない")
+        }
+        let endKey = HKSampleSortIdentifierEndDate
+        let endDate = NSSortDescriptor(key: endKey, ascending: false)
+        
+        return HKSampleQuery(sampleType: btType, predicate: nil, limit: 1, sortDescriptors: [endDate], resultsHandler: completion)
+    }
+    
+    func executeQuery() {
+        guard let btType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
+        {
+            return
+        }
+        
+        // HealthStoreのデータを全件取得するHKSampleQueryを返却
+        let findAllQuery = makeSampleQuery(type: btType){
+            query, responseObj, error in
+            
+            switch (responseObj, error) {
+            case (_, let err?):
+                print(err.description)
+            case (let samples?, nil):
+                // 取得した結果がresponseObjに格納されている。
+                // アプリで使用する場合、[AnyObject]!型のresponseObjを必要な型にキャストする必要がある
+                
+                guard let quantitySamples = samples as? [HKQuantitySample] else
+                {
+                    break
+                }
+                
+                // HealthStoreで使用していた型から体温の値へと復元する
+                let btResults : [(weight:Double, date:NSDate)] = quantitySamples.map { sample in
+                    return (
+                        sample.quantity.doubleValueForUnit(self.btUnit),
+                        sample.endDate
+                    )
+                }
+                
+                print("btResults : \(btResults)")
+                
+                dispatch_async(dispatch_get_main_queue(), {
+                    self.label.setText("\(btResults)")
+                })
+                
+                btResults.forEach{ result in
+                    print(
+                        result.weight,
+                        result.date.descriptionWithLocale(nil),
+                        result.date.descriptionWithLocale(NSLocale.currentLocale()),
+                        separator: " , ")
+                }
+            default:
+                fatalError("responseObj and error are invalid.")
+            }
+        }
+        
+        let healthStore = HKHealthStore()
+        
+        healthStore.executeQuery(findAllQuery)
+    }
 }
