@@ -8,8 +8,11 @@
 
 import ClockKit
 import HealthKit
+import WatchKit
 
 class ComplicationController: NSObject, CLKComplicationDataSource {
+    
+    let healthStore = HKHealthStore()
     
     func getSupportedTimeTravelDirectionsForComplication(complication: CLKComplication, withHandler handler: (CLKComplicationTimeTravelDirections) -> Void) {
         handler([.None])
@@ -33,7 +36,7 @@ class ComplicationController: NSObject, CLKComplicationDataSource {
         
         print("getCurrentTimelineEntryForComplication")
         
-        let healthStore = HKHealthStore()
+        WKInterfaceDevice.currentDevice().playHaptic(.Success)
         
         // 体重情報の型を生成する
         guard let btType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
@@ -91,8 +94,14 @@ class ComplicationController: NSObject, CLKComplicationDataSource {
                 
                 guard let quantitySamples = samples as? [HKQuantitySample] else
                 {
-                    break
+                    return
                 }
+                
+                guard let quantitySample = quantitySamples.first else {
+                    return
+                }
+                
+                print("quantitySample.endDate = \(quantitySample.endDate)")
                 
                 // HealthStoreで使用していた型から体温の値へと復元する
                 let btResults : [(weight:Double, date:NSDate)] = quantitySamples.map { sample in
@@ -112,45 +121,49 @@ class ComplicationController: NSObject, CLKComplicationDataSource {
                         separator: " , ")
                 }
                 
-                self.settingComplication(complication, count: btResults.count, withHandler: handler)
+                let weight = quantitySample.quantity.doubleValueForUnit(self.btUnit)
+                self.settingComplication(complication, weight: weight, withHandler: handler)
             default:
                 fatalError("responseObj and error are invalid.")
             }
         }
         
-        let healthStore = HKHealthStore()
-        
         healthStore.executeQuery(findAllQuery)
     }
     
-    func settingComplication(complication: CLKComplication, count n:Int, withHandler handler: ((CLKComplicationTimelineEntry?) -> Void)) {
+    func settingComplication(complication: CLKComplication, weight:Double, withHandler handler: ((CLKComplicationTimelineEntry?) -> Void)) {
+        
+        let weightString = NSString(format: "%.1f", weight) as String
+        
+        print("weightString = \(weightString)")
+        
         let template: CLKComplicationTemplate
         switch complication.family {
         case .ModularSmall:
             let modularSmall = CLKComplicationTemplateModularSmallSimpleText()
-            modularSmall.textProvider = CLKSimpleTextProvider(text: "\(n)")
+            modularSmall.textProvider = CLKSimpleTextProvider(text: weightString)
             template = modularSmall
         case .ModularLarge:
             let modularLarge = CLKComplicationTemplateModularLargeTallBody()
-            modularLarge.headerTextProvider = CLKSimpleTextProvider(text: "Count")
-            modularLarge.bodyTextProvider   = CLKSimpleTextProvider(text: "\(n)")
+            modularLarge.headerTextProvider = CLKSimpleTextProvider(text: "Weight")
+            modularLarge.bodyTextProvider   = CLKSimpleTextProvider(text: "\(weightString)kg")
             template = modularLarge
             
         case .UtilitarianSmall:
             let utilitarianSmall = CLKComplicationTemplateUtilitarianSmallFlat()
-            utilitarianSmall.textProvider = CLKSimpleTextProvider(text: "\(n)")
+            utilitarianSmall.textProvider = CLKSimpleTextProvider(text: "\(weightString)kg")
             utilitarianSmall.imageProvider = nil
             template = utilitarianSmall
             
         case .UtilitarianLarge:
             let utilitarianLarge = CLKComplicationTemplateUtilitarianLargeFlat()
-            utilitarianLarge.textProvider = CLKSimpleTextProvider(text: "Count : \(n)")
+            utilitarianLarge.textProvider = CLKSimpleTextProvider(text: "Weight : \(weightString)kg")
             utilitarianLarge.imageProvider = nil
             template = utilitarianLarge
             
         case .CircularSmall:
             let circularSmall = CLKComplicationTemplateCircularSmallRingText()
-            circularSmall.textProvider = CLKSimpleTextProvider(text: "\(n)")
+            circularSmall.textProvider = CLKSimpleTextProvider(text: weightString)
             circularSmall.fillFraction = 0.7
             circularSmall.ringStyle = CLKComplicationRingStyle.Closed
             template = circularSmall
@@ -173,7 +186,6 @@ class ComplicationController: NSObject, CLKComplicationDataSource {
         let endDate = NSSortDescriptor(key: endKey, ascending: false)
         
         return HKSampleQuery(sampleType: btType, predicate: nil, limit: 1, sortDescriptors: [endDate], resultsHandler: completion)
-//        return HKSampleQuery(sampleType: btType, predicate: nil, limit: Int(HKObjectQueryNoLimit), sortDescriptors: [endDate], resultsHandler: completion)
     }
     
     func getTimelineEntriesForComplication(complication: CLKComplication, beforeDate date: NSDate, limit: Int, withHandler handler: (([CLKComplicationTimelineEntry]?) -> Void)) {
