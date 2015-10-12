@@ -109,7 +109,7 @@ class ViewController: UIViewController {
                 print("btResults : \(btResults)")
                 
                 dispatch_async(dispatch_get_main_queue(), {
-                    self.label.text = "\(btResults)"
+                    self.label.text = "Count : \(btResults.count)"
                 })
                 
                 btResults.forEach{ result in

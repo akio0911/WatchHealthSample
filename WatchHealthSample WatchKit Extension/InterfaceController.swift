@@ -15,12 +15,24 @@ class InterfaceController: WKInterfaceController {
 
     @IBOutlet var label: WKInterfaceLabel!
     
+    let healthStore = HKHealthStore()
+    
     override func awakeWithContext(context: AnyObject?) {
         super.awakeWithContext(context)
         
-        // Configure interface objects here.
+    }
+
+    override func willActivate() {
+        // This method is called when watch view controller is about to be visible to user
+        super.willActivate()
         
-        let healthStore = HKHealthStore()
+        guard HKHealthStore.isHealthDataAvailable() == true else {
+            label.setText("not available")
+            return
+        }
+        label.setText("available")
+        
+        // Configure interface objects here.
         
         // 体重情報の型を生成する
         guard let btType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
@@ -55,11 +67,6 @@ class InterfaceController: WKInterfaceController {
         }
         
         print("Initialize success")
-    }
-
-    override func willActivate() {
-        // This method is called when watch view controller is about to be visible to user
-        super.willActivate()
     }
 
     override func didDeactivate() {
@@ -137,8 +144,6 @@ extension InterfaceController
                 fatalError("responseObj and error are invalid.")
             }
         }
-        
-        let healthStore = HKHealthStore()
         
         healthStore.executeQuery(findAllQuery)
     }
