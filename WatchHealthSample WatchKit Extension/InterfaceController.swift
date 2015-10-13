@@ -9,7 +9,7 @@
 import WatchKit
 import Foundation
 import HealthKit
-
+import ClockKit
 
 class InterfaceController: WKInterfaceController {
 
@@ -67,6 +67,11 @@ class InterfaceController: WKInterfaceController {
         }
         
         print("Initialize success")
+        
+        let complicationServer = CLKComplicationServer.sharedInstance()
+        for complication in complicationServer.activeComplications {
+            complicationServer.reloadTimelineForComplication(complication)
+        }
     }
 
     override func didDeactivate() {
