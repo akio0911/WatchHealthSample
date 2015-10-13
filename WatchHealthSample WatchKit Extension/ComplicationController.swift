@@ -9,10 +9,9 @@
 import ClockKit
 import HealthKit
 import WatchKit
+import WatchConnectivity
 
 class ComplicationController: NSObject, CLKComplicationDataSource {
-    
-    let healthStore = HKHealthStore()
     
     func getSupportedTimeTravelDirectionsForComplication(complication: CLKComplication, withHandler handler: (CLKComplicationTimeTravelDirections) -> Void) {
         handler([.None])
@@ -38,84 +37,36 @@ class ComplicationController: NSObject, CLKComplicationDataSource {
         
         WKInterfaceDevice.currentDevice().playHaptic(.Success) // FIXME: 後で消す
         
-        guard let bodyMassType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
-        {
-            return
+        if WCSession.isSupported() {
+            let session = WCSession.defaultSession()
+            session.delegate = self
+            session.activateSession()
         }
         
-        switch healthStore.authorizationStatusForType(bodyMassType) {
-        case .NotDetermined, .SharingDenied:
-            let types = Set([bodyMassType])
-            healthStore.requestAuthorizationToShareTypes(nil, readTypes: types){ success, error in
-                
-                switch (success, error) {
-                case (false, let err?):
-                    print(err.description)
-                case (true , _):
-                    self.executeQuery(complication, withHandler: handler)
-                default:
-                    fatalError("success and error are invalid.")
-                }
-            }
-        case .SharingAuthorized:
-            self.executeQuery(complication, withHandler: handler)
-        }
-
-    }
-    
-    let kiloGramUnit: HKUnit = HKUnit.gramUnitWithMetricPrefix(HKMetricPrefix.Kilo)
-
-    func executeQuery(complication: CLKComplication, withHandler handler: ((CLKComplicationTimelineEntry?) -> Void)) {
-        print("executeQuery")
-        
-        guard let bodyMassType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
-        {
-            return
-        }
-        
-        let findAllQuery = makeSampleQuery(type: bodyMassType){
-            query, responseObj, error in
+        if WCSession.defaultSession().reachable {
+            print("reachable")
             
-            switch (responseObj, error) {
-            case (_, let err?):
-                print(err.description)
-            case (let samples?, nil):
-                guard let quantitySamples = samples as? [HKQuantitySample] else
-                {
-                    return
+            let message = ["From":"Watch", "To":"Phone"]
+            WCSession.defaultSession().sendMessage(message,
+                replyHandler: { (dic:[String : AnyObject]) -> Void in
+                    print("Watch : success : dic = \(dic)")
+                    
+                    guard let weight = dic["KiloGram"] as? NSNumber else {
+                        handler(nil)
+                        return
+                    }
+                    
+                    print("weight = \(weight)")
+                    print("weight.dynamicType = \(weight.dynamicType)")
+                    
+                    self.settingComplication(complication, weight: weight.doubleValue, withHandler: handler)
+                },
+                errorHandler: { (error:NSError) -> Void in
+                    print("Watch : error : \(error.localizedDescription)")
                 }
-                
-                guard let quantitySample = quantitySamples.first else {
-                    return
-                }
-                
-                print("quantitySample.endDate = \(quantitySample.endDate)")
-                
-                let btResults : [(weight:Double, date:NSDate)] = quantitySamples.map { sample in
-                    return (
-                        sample.quantity.doubleValueForUnit(self.kiloGramUnit),
-                        sample.endDate
-                    )
-                }
-                
-                print("btResults : \(btResults)")
-                
-                btResults.forEach{ result in
-                    print(
-                        result.weight,
-                        result.date.descriptionWithLocale(nil),
-                        result.date.descriptionWithLocale(NSLocale.currentLocale()),
-                        separator: " , ")
-                }
-                
-                let weight = quantitySample.quantity.doubleValueForUnit(self.kiloGramUnit)
-                self.settingComplication(complication, weight: weight, withHandler: handler)
-            default:
-                fatalError("responseObj and error are invalid.")
-            }
+            )
         }
-        
-        healthStore.executeQuery(findAllQuery)
+
     }
     
     func settingComplication(complication: CLKComplication, weight:Double, withHandler handler: ((CLKComplicationTimelineEntry?) -> Void)) {
@@ -159,19 +110,6 @@ class ComplicationController: NSObject, CLKComplicationDataSource {
         
         let timelineEntry = CLKComplicationTimelineEntry(date: NSDate(), complicationTemplate: template)
         handler(timelineEntry)
-    }
-    
-    typealias FindHealthValueCompletion = (HKSampleQuery, [HKSample]?, NSError?) -> Void
-    
-    func makeSampleQuery(type type: HKQuantityType, completion: FindHealthValueCompletion) -> HKSampleQuery {
-        guard let bodyMassType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
-        {
-            fatalError("bodyMassTypeが作成できない")
-        }
-        let endKey = HKSampleSortIdentifierEndDate
-        let endDate = NSSortDescriptor(key: endKey, ascending: false)
-        
-        return HKSampleQuery(sampleType: bodyMassType, predicate: nil, limit: 1, sortDescriptors: [endDate], resultsHandler: completion)
     }
     
     func getTimelineEntriesForComplication(complication: CLKComplication, beforeDate date: NSDate, limit: Int, withHandler handler: (([CLKComplicationTimelineEntry]?) -> Void)) {
@@ -226,11 +164,8 @@ class ComplicationController: NSObject, CLKComplicationDataSource {
             handler(template)
         }
     }
+}
+
+extension ComplicationController : WCSessionDelegate {
     
-    func makeFutureDateWithDay(day:Int) -> NSDate? {
-        let cal = NSCalendar.currentCalendar()
-        let components = cal.components([.Year, .Month, .Day], fromDate: NSDate())
-        components.day += day
-        return cal.dateFromComponents(components)
-    }
 }
