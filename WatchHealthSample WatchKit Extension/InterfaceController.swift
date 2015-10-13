@@ -26,6 +26,8 @@ class InterfaceController: WKInterfaceController {
         // This method is called when watch view controller is about to be visible to user
         super.willActivate()
         
+        WKInterfaceDevice.currentDevice().playHaptic(.Success) // FIXME: 後で消す
+        
         guard HKHealthStore.isHealthDataAvailable() == true else {
             label.setText("not available")
             return

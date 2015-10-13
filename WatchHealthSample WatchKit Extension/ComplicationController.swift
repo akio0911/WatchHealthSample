@@ -36,7 +36,7 @@ class ComplicationController: NSObject, CLKComplicationDataSource {
         
         print("getCurrentTimelineEntryForComplication")
         
-        WKInterfaceDevice.currentDevice().playHaptic(.Success)
+        WKInterfaceDevice.currentDevice().playHaptic(.Success) // FIXME: 後で消す
         
         // 体重情報の型を生成する
         guard let btType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
