@@ -10,7 +10,7 @@
             <objects>
                 <controller id="AgC-eL-Hgc" customClass="InterfaceController" customModule="WatchHealthSample_WatchKit_App" customModuleProvider="target">
                     <items>
-                        <label alignment="left" text="Label" id="kDA-gn-BTG"/>
+                        <label alignment="left" text="Label" numberOfLines="0" id="kDA-gn-BTG"/>
                     </items>
                     <connections>
                         <outlet property="label" destination="kDA-gn-BTG" id="wxa-lg-R7j"/>
