@@ -10,6 +10,7 @@ import WatchKit
 import Foundation
 import HealthKit
 import ClockKit
+import WatchConnectivity
 
 class InterfaceController: WKInterfaceController {
 
@@ -34,45 +35,30 @@ class InterfaceController: WKInterfaceController {
         }
         label.setText("available")
         
-        // Configure interface objects here.
-        
-        // 体重情報の型を生成する
-        guard let btType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
-        {
-            print("Failed to create HKObjectType")
-            return
-        }
-        
-        switch healthStore.authorizationStatusForType(btType) {
-        case .NotDetermined, .SharingDenied:
-            // 体重型のデータをHealthStoreから取得するために、ユーザーへ許可を求めます。
-            // 許可されたデータのみ、アプリケーションからHealthStoreへ読み込みする権限が与えられます。
-            // ヘルスケアの[ソース]タブ画面がモーダルで表示されます。
-            // 第1引数に指定したNSSet!型のshareTypesの書き込み許可を求めます。
-            // 第2引数に指定したNSSet!型のreadTypesの読み込み許可を求めます。
-            
-            let types = Set([btType])
-            healthStore.requestAuthorizationToShareTypes(nil, readTypes: types){ success, error in
-                
-                switch (success, error) {
-                case (false, let err?):
-                    print(err.description)
-                case (true , _):
-                    print("取得可能")
-                    self.executeQuery()
-                default:
-                    fatalError("success and error are invalid.")
-                }
-            }
-        case .SharingAuthorized:
-            self.executeQuery()
-        }
-        
-        print("Initialize success")
-        
         let complicationServer = CLKComplicationServer.sharedInstance()
         for complication in complicationServer.activeComplications {
             complicationServer.reloadTimelineForComplication(complication)
+        }
+        
+        if WCSession.isSupported() {
+            let session = WCSession.defaultSession()
+            session.delegate = self
+            session.activateSession()
+        }
+        
+        if WCSession.defaultSession().reachable {
+            print("reachable")
+            
+            let message = ["From":"Watch", "To":"Phone"]
+            WCSession.defaultSession().sendMessage(message,
+                replyHandler: { (dic:[String : AnyObject]) -> Void in
+                    print("Watch : success : dic = \(dic)")
+                    self.label.setText("dic = \(dic)")
+                },
+                errorHandler: { (error:NSError) -> Void in
+                    print("Watch : error : \(error.localizedDescription)")
+                }
+            )
         }
     }
 
@@ -85,51 +71,46 @@ class InterfaceController: WKInterfaceController {
 
 extension InterfaceController
 {
-    // 体重の単位を生成する。単位はkg
-    var btUnit: HKUnit {
+    var kiloGramUnit: HKUnit {
         return HKUnit.gramUnitWithMetricPrefix(HKMetricPrefix.Kilo)
     }
     
     typealias FindHealthValueCompletion = (HKSampleQuery, [HKSample]?, NSError?) -> Void
     
     func makeSampleQuery(type type: HKQuantityType, completion: FindHealthValueCompletion) -> HKSampleQuery {
-        // 体重情報の型を生成する
-        guard let btType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
+        guard let bodyMassType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
         {
-            fatalError("btTypeが作成できない")
+            fatalError("bodyMassTypeが作成できない")
         }
         let endKey = HKSampleSortIdentifierEndDate
         let endDate = NSSortDescriptor(key: endKey, ascending: false)
         
-        return HKSampleQuery(sampleType: btType, predicate: nil, limit: 1, sortDescriptors: [endDate], resultsHandler: completion)
+        return HKSampleQuery(sampleType: bodyMassType, predicate: nil, limit: 7, sortDescriptors: [endDate], resultsHandler: completion)
     }
     
     func executeQuery() {
-        guard let btType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
+        guard let bodyMassType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
         {
             return
         }
         
-        // HealthStoreのデータを全件取得するHKSampleQueryを返却
-        let findAllQuery = makeSampleQuery(type: btType){
+        let findAllQuery = makeSampleQuery(type: bodyMassType){
             query, responseObj, error in
             
             switch (responseObj, error) {
             case (_, let err?):
                 print(err.description)
             case (let samples?, nil):
-                // 取得した結果がresponseObjに格納されている。
-                // アプリで使用する場合、[AnyObject]!型のresponseObjを必要な型にキャストする必要がある
-                
+                print("samples : \(samples)")
+
                 guard let quantitySamples = samples as? [HKQuantitySample] else
                 {
                     break
                 }
                 
-                // HealthStoreで使用していた型から体温の値へと復元する
                 let btResults : [(weight:Double, date:NSDate)] = quantitySamples.map { sample in
                     return (
-                        sample.quantity.doubleValueForUnit(self.btUnit),
+                        sample.quantity.doubleValueForUnit(self.kiloGramUnit),
                         sample.endDate
                     )
                 }
@@ -154,4 +135,8 @@ extension InterfaceController
         
         healthStore.executeQuery(findAllQuery)
     }
+}
+
+extension InterfaceController : WCSessionDelegate {
+    
 }

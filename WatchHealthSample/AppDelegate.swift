@@ -7,15 +7,24 @@
 //
 
 import UIKit
+import WatchConnectivity
+import HealthKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
-
-    func application(application: UIApplication, didFinishLaunchingWithOptions launchOptions: [NSObject: AnyObject]?) -> Bool {
-        // Override point for customization after application launch.
+    let healthStore = HKHealthStore()
+    
+    func application(application: UIApplication, didFinishLaunchingWithOptions launchOptions: [NSObject: AnyObject]?) -> Bool
+    {
+        if WCSession.isSupported() {
+            let session = WCSession.defaultSession()
+            session.delegate = self
+            session.activateSession()
+        }
+        
         return true
     }
 
@@ -42,5 +51,114 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
 
+}
+
+extension AppDelegate : WCSessionDelegate {
+    typealias ReplyHandler = ([String : AnyObject]) -> Void
+    
+    var kiloGramUnit: HKUnit {
+        return HKUnit.gramUnitWithMetricPrefix(HKMetricPrefix.Kilo)
+    }
+    
+    func session(session: WCSession, didReceiveMessage message: [String : AnyObject], replyHandler: ReplyHandler) {
+        print("didReceiveMessage")
+        
+        guard HKHealthStore.isHealthDataAvailable() == true else {
+            print("not available")
+            return
+        }
+        print("available")
+        
+        guard let bodyMassType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
+        {
+            print("Failed to create HKObjectType")
+            return
+        }
+        
+        switch healthStore.authorizationStatusForType(bodyMassType) {
+        case .NotDetermined, .SharingDenied:
+            let types = Set([bodyMassType])
+            healthStore.requestAuthorizationToShareTypes(nil, readTypes: types){ success, error in
+                
+                switch (success, error) {
+                case (false, let err?):
+                    print(err.description)
+                case (true , _):
+                    print("取得可能")
+                    self.executeQuery(replyHandler)
+                default:
+                    fatalError("success and error are invalid.")
+                }
+            }
+        case .SharingAuthorized:
+            self.executeQuery(replyHandler)
+        }
+    }
+    
+    typealias FindHealthValueCompletion = (HKSampleQuery, [HKSample]?, NSError?) -> Void
+    
+    func makeSampleQuery(type type: HKQuantityType, completion: FindHealthValueCompletion) -> HKSampleQuery {
+        guard let bodyMassType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
+        {
+            fatalError("bodyMassTypeが作成できない")
+        }
+        let endKey = HKSampleSortIdentifierEndDate
+        let endDate = NSSortDescriptor(key: endKey, ascending: false)
+        
+        return HKSampleQuery(sampleType: bodyMassType, predicate: nil, limit: 7, sortDescriptors: [endDate], resultsHandler: completion)
+    }
+    
+    func executeQuery(replyHandler : ReplyHandler) {
+        guard let bodyMassType = HKObjectType.quantityTypeForIdentifier(HKQuantityTypeIdentifierBodyMass) else
+        {
+            return
+        }
+        
+        let findAllQuery = makeSampleQuery(type: bodyMassType){
+            query, responseObj, error in
+            
+            switch (responseObj, error) {
+            case (_, let err?):
+                print(err.description)
+            case (let samples?, nil):
+                print("samples : \(samples)")
+                
+                guard let quantitySamples = samples as? [HKQuantitySample] else
+                {
+                    break
+                }
+                
+                let btResults : [(weight:Double, date:NSDate)] = quantitySamples.map { sample in
+                    return (
+                        sample.quantity.doubleValueForUnit(self.kiloGramUnit),
+                        sample.endDate
+                    )
+                }
+                
+                print("btResults : \(btResults)")
+                
+                btResults.forEach{ result in
+                    print(
+                        result.weight,
+                        result.date.descriptionWithLocale(nil),
+                        result.date.descriptionWithLocale(NSLocale.currentLocale()),
+                        separator: " , ")
+                }
+                
+                let reply : [String : AnyObject]
+                if let quantitySample = quantitySamples.first {
+                    reply = ["KiloGram" : quantitySample.quantity.doubleValueForUnit(self.kiloGramUnit)]
+                }else{
+                    reply = ["Status":"Error"]
+                }
+                replyHandler(reply)
+                
+            default:
+                fatalError("responseObj and error are invalid.")
+            }
+        }
+        
+        healthStore.executeQuery(findAllQuery)
+    }
 }
 
